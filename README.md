@@ -57,7 +57,9 @@ On macOS Xcode Command Line Tools are enough.
 
 ```bash
 # from the gui/ directory
-SHELL_BIN=../minishell npm start
+# Use the absolute path to minishell (or it won't spawn correctly in the PTY)
+# Note: Use WSL Node.js directly to avoid Windows npm issues
+SHELL_BIN={pwd}../minishell /usr/bin/node src/server.js
 ```
 
 Open **http://localhost:3000** in your browser. You should see a terminal

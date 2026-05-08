@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>minishell</title>
+
+  <!--
+    xterm.js — a full VT100/ANSI terminal emulator in the browser.
+    It handles ANSI escape sequences, colours, cursor movement, bold/italic,
+    mouse events, copy-paste, scrollback — everything.
+    We load it from CDN so you don't need a bundler.
+  -->
+  <link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
+  <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+
+  <!--
+    FitAddon: resizes the xterm canvas so it fills its container exactly.
+    Without it the terminal has a fixed size and looks wrong on resize.
+  -->
+  <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+
+  <!--
+    WebLinksAddon: makes URLs in terminal output clickable.
+    Optional but nice to have.
+  -->
+  <script src="https://cdn.jsdelivr.net/npm/xterm-addon-web-links@0.9.0/lib/xterm-addon-web-links.js"></script>
+
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ── Title bar ─────────────────────────────────────────── -->
+  <div class="window">
+    <div class="titlebar">
+      <div class="traffic-lights">
+        <button class="tl tl-close"    id="btn-close"    aria-label="Close"    title="Close"></button>
+        <button class="tl tl-minimize" id="btn-minimize" aria-label="Minimize" title="Minimise"></button>
+        <button class="tl tl-maximize" id="btn-maximize" aria-label="Maximize" title="Maximise"></button>
+      </div>
+
+      <span class="title-text" id="title-text">minishell</span>
+
+      <div class="titlebar-right">
+        <span class="status-dot" id="status-dot" title="disconnected"></span>
+        <span class="status-label" id="status-label">connecting…</span>
+        <button class="icon-btn" id="btn-reconnect" title="Reconnect" aria-label="Reconnect">
+          <!-- reload icon (inline SVG so no external dep) -->
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M13.5 8A5.5 5.5 0 1 1 10 3.07"/>
+            <polyline points="10 1 10 4 13 4"/>
+          </svg>
+        </button>
+        <button class="icon-btn" id="btn-clear" title="Clear screen (Ctrl+L)" aria-label="Clear screen">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 13h10M6 3l-3 5h10l-3-5z"/>
+            <line x1="8" y1="8" x2="8" y2="13"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- ── Tab bar (one tab per session — extend if you want multiple) ── -->
+    <div class="tabbar">
+      <div class="tab active" id="tab-main">
+        <span class="tab-icon">⬡</span>
+        <span class="tab-title">minishell</span>
+        <span class="tab-close" id="tab-close" role="button" aria-label="Close tab">×</span>
+      </div>
+      <button class="tab-new" id="btn-new-tab" aria-label="New tab" title="New tab">+</button>
+    </div>
+
+    <!-- ── Terminal container — xterm.js renders a <canvas> inside here ── -->
+    <div class="terminal-wrap" id="terminal-container"></div>
+
+    <!-- ── Status bar ──────────────────────────────────────── -->
+    <div class="statusbar">
+      <span id="sb-shell">shell: minishell</span>
+      <span id="sb-pid">pid: –</span>
+      <span id="sb-size">–×–</span>
+    </div>
+  </div>
+
+  <script src="terminal.js"></script>
+</body>
+</html>

@@ -1,0 +1,327 @@
+/* ── Reset & base ──────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  /* colour palette */
+  --bg-app:        #0d1117;
+  --bg-window:     #161b22;
+  --bg-titlebar:   #1c2128;
+  --bg-tabbar:     #161b22;
+  --bg-tab-active: #0d1117;
+  --bg-statusbar:  #1c2128;
+
+  --border:        #30363d;
+  --border-light:  #21262d;
+
+  --text:          #e6edf3;
+  --text-dim:      #8b949e;
+  --text-muted:    #484f58;
+
+  --green:         #3fb950;
+  --yellow:        #d29922;
+  --red:           #f85149;
+  --blue:          #388bfd;
+  --purple:        #bc8cff;
+
+  /* traffic-light colours */
+  --tl-close:    #ff5f57;
+  --tl-minimize: #febc2e;
+  --tl-maximize: #28c840;
+  --tl-hover-bg: rgba(255,255,255,0.12);
+
+  /* xterm terminal background — must match terminal.js theme.background */
+  --term-bg: #0d1117;
+
+  --radius: 10px;
+  --titlebar-h: 40px;
+  --tabbar-h:   34px;
+  --statusbar-h: 24px;
+}
+
+html, body {
+  height: 100%;
+  background: var(--bg-app);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: var(--text);
+  overflow: hidden;
+  /* subtle dot-grid background */
+  background-image: radial-gradient(var(--border-light) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* ── Window chrome ─────────────────────────────────────────────────── */
+.window {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  max-width: 1400px;
+  margin: 0 auto;
+  background: var(--bg-window);
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}
+
+/* ── Title bar ─────────────────────────────────────────────────────── */
+.titlebar {
+  flex-shrink: 0;
+  height: var(--titlebar-h);
+  background: var(--bg-titlebar);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  gap: 12px;
+  user-select: none;
+  -webkit-app-region: drag;  /* drag-to-move in Electron if you ever go that route */
+}
+
+/* traffic lights */
+.traffic-lights {
+  display: flex;
+  gap: 6px;
+  -webkit-app-region: no-drag;
+}
+
+.tl {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  position: relative;
+  transition: filter 0.15s;
+}
+.tl:hover { filter: brightness(1.2); }
+.tl-close    { background: var(--tl-close); }
+.tl-minimize { background: var(--tl-minimize); }
+.tl-maximize { background: var(--tl-maximize); }
+
+/* symbols appear on hover */
+.tl::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  opacity: 0;
+  transition: opacity 0.15s;
+  color: rgba(0,0,0,0.7);
+}
+.tl-close::after    { content: '✕'; }
+.tl-minimize::after { content: '−'; }
+.tl-maximize::after { content: '+'; }
+.traffic-lights:hover .tl::after { opacity: 1; }
+
+.title-text {
+  flex: 1;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+  pointer-events: none;
+}
+
+.titlebar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  -webkit-app-region: no-drag;
+}
+
+/* connection status indicator */
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition: background 0.3s;
+}
+.status-dot.connected    { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.status-dot.disconnected { background: var(--red); }
+.status-dot.connecting   { background: var(--yellow); animation: pulse 1s ease-in-out infinite; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+
+.status-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  min-width: 72px;
+}
+
+.icon-btn {
+  width: 26px;
+  height: 26px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--text-dim);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  padding: 4px;
+}
+.icon-btn svg { width: 14px; height: 14px; }
+.icon-btn:hover {
+  background: var(--tl-hover-bg);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+/* ── Tab bar ───────────────────────────────────────────────────────── */
+.tabbar {
+  flex-shrink: 0;
+  height: var(--tabbar-h);
+  background: var(--bg-tabbar);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: stretch;
+  padding: 0 8px;
+  gap: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tabbar::-webkit-scrollbar { display: none; }
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px 0 10px;
+  font-size: 12px;
+  color: var(--text-dim);
+  border-radius: 6px 6px 0 0;
+  cursor: pointer;
+  border: 1px solid transparent;
+  border-bottom: none;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+  user-select: none;
+  position: relative;
+  top: 1px;
+}
+.tab:hover { background: var(--border-light); color: var(--text); }
+.tab.active {
+  background: var(--bg-tab-active);
+  border-color: var(--border);
+  border-bottom-color: var(--bg-tab-active);
+  color: var(--text);
+}
+
+.tab-icon { font-size: 10px; opacity: 0.6; }
+.tab-close {
+  margin-left: 4px;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s;
+  line-height: 1;
+}
+.tab:hover .tab-close,
+.tab.active .tab-close { opacity: 0.6; }
+.tab-close:hover { opacity: 1 !important; background: rgba(248,81,73,0.25); color: var(--red); }
+
+.tab-new {
+  align-self: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+  margin-left: 2px;
+}
+.tab-new:hover { background: var(--border-light); color: var(--text); }
+
+/* ── Terminal area ─────────────────────────────────────────────────── */
+.terminal-wrap {
+  flex: 1;
+  min-height: 0;          /* critical: lets flex child shrink below content height */
+  background: var(--term-bg);
+  padding: 6px 8px;
+  overflow: hidden;
+}
+
+/*
+  xterm.js injects its own .xterm container inside .terminal-wrap.
+  These rules make it fill the wrapper exactly.
+*/
+.terminal-wrap .xterm {
+  height: 100%;
+}
+.terminal-wrap .xterm-viewport {
+  /* let our parent handle scrolling */
+  overflow-y: hidden !important;
+}
+
+/* ── Status bar ────────────────────────────────────────────────────── */
+.statusbar {
+  flex-shrink: 0;
+  height: var(--statusbar-h);
+  background: var(--bg-statusbar);
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  gap: 20px;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: "SF Mono", "Fira Code", monospace;
+}
+.statusbar span { white-space: nowrap; }
+
+/* ── Scrollbar styling for the xterm viewport ──────────────────────── */
+.xterm-viewport::-webkit-scrollbar       { width: 6px; }
+.xterm-viewport::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+.xterm-viewport::-webkit-scrollbar-track { background: transparent; }
+
+/* ── Overlay shown when shell exits ──────────────────────────────────── */
+.exit-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(13,17,23,0.85);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  pointer-events: auto;
+  backdrop-filter: blur(2px);
+}
+.exit-overlay p {
+  color: var(--text-dim);
+  font-size: 14px;
+}
+.exit-overlay button {
+  padding: 8px 20px;
+  background: var(--bg-titlebar);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.exit-overlay button:hover { background: var(--border); }

@@ -1,0 +1,21 @@
+# Node.js dependencies
+node_modules/
+
+# C build artifacts
+*.o
+*.a
+*.so
+
+# Executables
+minishell
+
+# IDE and OS files
+.vscode/
+.DS_Store
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.swp
