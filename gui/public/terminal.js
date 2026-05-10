@@ -1,280 +1,327 @@
 /**
- * terminal.js — frontend wiring
+ * terminal.js — multi-tab terminal manager
  *
- * Responsibilities:
- *   1. Create an xterm.js Terminal instance and attach it to the DOM
- *   2. Load xterm addons (FitAddon for resize, WebLinksAddon for URLs)
- *   3. Open a WebSocket to the server's /terminal endpoint
- *   4. Bridge: xterm input → WebSocket → server → PTY → shell
- *              shell → PTY → server → WebSocket → xterm output
- *   5. Send resize events so the PTY always matches the browser window
- *   6. Handle reconnect, status indicators, toolbar buttons
+ * Each tab owns:
+ *   - an xterm.js Terminal instance  (renders to its own <div>)
+ *   - a FitAddon                     (handles resize for that terminal)
+ *   - a WebSocket                    (its own connection to the server)
+ *   - a <div> tab button in the tabbar
+ *   - a <div> terminal surface in #terminal-container
+ *
+ * Switching tabs just swaps which surface is visible and which
+ * terminal has focus — no teardown/rebuild needed.
  */
 
 "use strict";
 
-// ── 1. Create the xterm.js Terminal ───────────────────────────────────────────
-//
-// Terminal(options) — full option list at:
-//   https://xtermjs.org/docs/api/terminal/interfaces/iterminaloptions/
-//
-const term = new Terminal({
-  // Font — use a monospace stack so glyphs align correctly
-  fontFamily: '"JetBrains Mono", "Fira Code", "Cascadia Code", "Menlo", monospace',
-  fontSize:   14,
-  lineHeight: 1.25,
-  letterSpacing: 0,
+// ── Shared xterm theme (same for every tab) ────────────────────────────────────
 
-  // Cursor
-  cursorBlink: true,
-  cursorStyle: "block",
+const THEME = {
+  background:          "#0d1117",
+  foreground:          "#e6edf3",
+  cursor:              "#58a6ff",
+  cursorAccent:        "#0d1117",
+  selectionBackground: "rgba(88,166,255,0.25)",
+  black:         "#484f58", red:           "#ff7b72",
+  green:         "#3fb950", yellow:        "#d29922",
+  blue:          "#388bfd", magenta:       "#bc8cff",
+  cyan:          "#39c5cf", white:         "#b1bac4",
+  brightBlack:   "#6e7681", brightRed:     "#ffa198",
+  brightGreen:   "#56d364", brightYellow:  "#e3b341",
+  brightBlue:    "#79c0ff", brightMagenta: "#d2a8ff",
+  brightCyan:    "#56d4dd", brightWhite:   "#f0f6fc",
+};
 
-  // Scrollback: how many lines to keep above the viewport
-  scrollback: 5000,
-
-  // Allow the terminal to use the clipboard (Ctrl+Shift+C/V)
+const TERM_OPTIONS = {
+  fontFamily:   '"JetBrains Mono", "Fira Code", "Cascadia Code", monospace',
+  fontSize:     14,
+  lineHeight:   1.25,
+  cursorBlink:  true,
+  cursorStyle:  "block",
+  scrollback:   5000,
   allowProposedApi: true,
+  theme: THEME,
+};
 
-  // Colour theme — must match --term-bg in style.css
-  theme: {
-    background:   "#0d1117",
-    foreground:   "#e6edf3",
-    cursor:       "#58a6ff",
-    cursorAccent: "#0d1117",
-    selectionBackground: "rgba(88,166,255,0.25)",
+// ── State ──────────────────────────────────────────────────────────────────────
 
-    // Standard 16 ANSI colours
-    black:         "#484f58",
-    red:           "#ff7b72",
-    green:         "#3fb950",
-    yellow:        "#d29922",
-    blue:          "#388bfd",
-    magenta:       "#bc8cff",
-    cyan:          "#39c5cf",
-    white:         "#b1bac4",
-    brightBlack:   "#6e7681",
-    brightRed:     "#ffa198",
-    brightGreen:   "#56d364",
-    brightYellow:  "#e3b341",
-    brightBlue:    "#79c0ff",
-    brightMagenta: "#d2a8ff",
-    brightCyan:    "#56d4dd",
-    brightWhite:   "#f0f6fc",
-  },
-});
+// sessions: Map<id, Session>
+// Session = {
+//   id:          number,
+//   term:        Terminal,
+//   fitAddon:    FitAddon,
+//   ws:          WebSocket | null,
+//   tabEl:       HTMLElement,    ← the <div class="tab"> button
+//   surfaceEl:   HTMLElement,    ← the <div> xterm renders into
+//   reconnTimer: number | null,  ← setTimeout handle
+// }
+const sessions = new Map();
+let   nextId   = 1;
+let   activeId = null;  // which tab is currently visible
 
-// ── 2. Load addons ─────────────────────────────────────────────────────────────
-//
-// Addons extend xterm with extra functionality.  They must be loaded before
-// the terminal is opened (before term.open()).
+// ── DOM refs ───────────────────────────────────────────────────────────────────
 
-const fitAddon      = new FitAddon.FitAddon();
-const webLinksAddon = new WebLinksAddon.WebLinksAddon();
+const tabbar        = document.getElementById("tabbar");
+const btnNewTab     = document.getElementById("btn-new-tab");
+const termContainer = document.getElementById("terminal-container");
+const statusDot     = document.getElementById("status-dot");
+const statusLabel   = document.getElementById("status-label");
+const sbSize        = document.getElementById("sb-size");
 
-term.loadAddon(fitAddon);
-term.loadAddon(webLinksAddon);
-
-// ── 3. Mount xterm into the DOM ────────────────────────────────────────────────
-//
-// term.open(element) injects a <canvas> (the terminal surface) and a
-// transparent <textarea> (keyboard input target) into `element`.
-
-const container = document.getElementById("terminal-container");
-term.open(container);
-
-// FitAddon.fit() resizes the xterm canvas to fill the container exactly.
-// Call once on mount, then again on every window resize.
-fitAddon.fit();
-
-// ── Helpers ────────────────────────────────────────────────────────────────────
-
-const statusDot   = document.getElementById("status-dot");
-const statusLabel = document.getElementById("status-label");
-const sbPid       = document.getElementById("sb-pid");
-const sbSize      = document.getElementById("sb-size");
+// ── Status helpers (reflect the *active* tab's connection state) ───────────────
 
 function setStatus(state, label) {
-  statusDot.className   = "status-dot " + state;
-  statusDot.title       = label;
+  statusDot.className     = "status-dot " + state;
+  statusDot.title         = label;
   statusLabel.textContent = label;
 }
 
-function updateSizeDisplay() {
-  sbSize.textContent = `${term.cols}×${term.rows}`;
+function updateSizeDisplay(session) {
+  sbSize.textContent = `${session.term.cols}×${session.term.rows}`;
 }
 
-// ── 4. WebSocket connection ────────────────────────────────────────────────────
+// ── Create a new session ───────────────────────────────────────────────────────
 
-let ws;             // the active WebSocket (may be replaced on reconnect)
-let reconnectTimer; // setTimeout handle for auto-reconnect
+function createSession() {
+  const id = nextId++;
 
-function connect() {
-  // Use ws:// or wss:// depending on whether the page is served over HTTPS
-  const proto = location.protocol === "https:" ? "wss" : "ws";
-  const url   = `${proto}://${location.host}/terminal`;
+  // 1. Terminal surface div — xterm renders its canvas into this
+  const surfaceEl = document.createElement("div");
+  surfaceEl.className     = "terminal-surface";
+  surfaceEl.style.display = "none";   // hidden until this tab is activated
+  termContainer.appendChild(surfaceEl);
 
-  clearTimeout(reconnectTimer);
-  setStatus("connecting", "connecting…");
+  // 2. xterm.js Terminal + addons
+  const term       = new Terminal(TERM_OPTIONS);
+  const fitAddon   = new FitAddon.FitAddon();
+  const linksAddon = new WebLinksAddon.WebLinksAddon();
+  term.loadAddon(fitAddon);
+  term.loadAddon(linksAddon);
+  term.open(surfaceEl);   // attaches canvas to surfaceEl (even while hidden)
 
-  ws = new WebSocket(url);
+  // 3. Tab button in the tabbar
+  const tabEl = document.createElement("div");
+  tabEl.className  = "tab";
+  tabEl.dataset.id = id;
+  tabEl.innerHTML  = `
+    <span class="tab-icon">⬡</span>
+    <span class="tab-title">minishell</span>
+    <span class="tab-close" role="button" aria-label="Close tab">×</span>
+  `;
+  // Insert before the "+" button
+  tabbar.insertBefore(tabEl, btnNewTab);
 
-  // ── Connection opened ──────────────────────────────────────────────────────
-  ws.addEventListener("open", () => {
-    setStatus("connected", "connected");
+  // 4. Assemble the session object
+  const session = { id, term, fitAddon, ws: null, tabEl, surfaceEl, reconnTimer: null };
+  sessions.set(id, session);
 
-    // After opening, sync the PTY size to the current terminal dimensions.
-    // (The server defaults to 120×36; the browser window may differ.)
-    sendResize();
+  // 5. Wire tab click → switch; close button → destroy
+  tabEl.addEventListener("click", (e) => {
+    if (e.target.classList.contains("tab-close")) {
+      destroySession(id);
+    } else {
+      activateSession(id);
+    }
   });
 
-  // ── Message from server ────────────────────────────────────────────────────
-  //
-  // The server sends two kinds of JSON messages:
-  //   { type: "output", data: "<string>" }  — raw terminal bytes from the shell
-  //   { type: "exit",   code: N }           — shell process exited
-  //
+  // 6. Forward keystrokes to the server
+  term.onData((data) => {
+    const s = sessions.get(id);
+    if (s && s.ws && s.ws.readyState === WebSocket.OPEN) {
+      s.ws.send(JSON.stringify({ type: "input", data }));
+    }
+  });
+
+  // 7. Open the WebSocket — this spawns a shell process on the server
+  connectSession(session);
+
+  return session;
+}
+
+// ── WebSocket connection for one session ───────────────────────────────────────
+
+function connectSession(session) {
+  clearTimeout(session.reconnTimer);
+
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  const ws    = new WebSocket(`${proto}://${location.host}/terminal`);
+  session.ws  = ws;
+
+  if (session.id === activeId) setStatus("connecting", "connecting…");
+
+  ws.addEventListener("open", () => {
+    if (session.id === activeId) setStatus("connected", "connected");
+    sendResize(session);
+  });
+
   ws.addEventListener("message", (event) => {
     let msg;
-    try {
-      msg = JSON.parse(event.data);
-    } catch {
-      // Shouldn't happen, but be defensive
-      console.warn("non-JSON message from server:", event.data);
-      return;
-    }
+    try { msg = JSON.parse(event.data); } catch { return; }
 
     if (msg.type === "output") {
-      // Write shell output to the terminal.
-      // xterm.js handles all ANSI escape sequences (colours, cursor, etc.)
-      term.write(msg.data);
-
+      session.term.write(msg.data);
     } else if (msg.type === "exit") {
-      setStatus("disconnected", `exited (${msg.code})`);
-      showExitOverlay(msg.code);
+      if (session.id === activeId)
+        setStatus("disconnected", `exited (${msg.code})`);
+      showExitOverlay(session, msg.code);
     }
   });
 
-  // ── Connection closed ──────────────────────────────────────────────────────
   ws.addEventListener("close", (event) => {
-    // code 1000 = normal closure (shell exited cleanly); don't auto-reconnect
     if (event.code !== 1000) {
-      setStatus("connecting", "reconnecting…");
-      reconnectTimer = setTimeout(connect, 3000);
+      if (session.id === activeId) setStatus("connecting", "reconnecting…");
+      session.reconnTimer = setTimeout(() => connectSession(session), 3000);
     } else {
-      setStatus("disconnected", "disconnected");
+      if (session.id === activeId) setStatus("disconnected", "disconnected");
     }
   });
 
-  // ── Connection error ───────────────────────────────────────────────────────
   ws.addEventListener("error", () => {
-    setStatus("disconnected", "connection error");
-    // The "close" event fires after "error", so reconnect is handled there.
+    if (session.id === activeId) setStatus("disconnected", "connection error");
   });
 }
 
-// ── 5. Input: xterm → WebSocket ───────────────────────────────────────────────
-//
-// term.onData fires whenever the user types into the terminal.
-// `data` is a string: single characters for normal keys, multi-char escape
-// sequences for arrows/function keys/Ctrl combos.
-//
-// We forward it as-is to the server, which writes it into the PTY.
-// The PTY's line discipline handles echoing and Ctrl-C/D/Z translation.
+// ── Activate (switch to) a session ────────────────────────────────────────────
 
-term.onData((data) => {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: "input", data }));
+function activateSession(id) {
+  const session = sessions.get(id);
+  if (!session) return;
+
+  // Hide all surfaces and deactivate all tab buttons
+  for (const [, s] of sessions) {
+    s.surfaceEl.style.display = "none";
+    s.tabEl.classList.remove("active");
   }
-});
 
-// ── 6. Resize: keep PTY in sync with browser window ───────────────────────────
-//
-// When the browser window changes size:
-//   a. Re-fit xterm to its container  →  updates term.cols and term.rows
-//   b. Send the new dimensions to the server  →  server calls pty.resize()
-//
-// If you skip this, the shell thinks the terminal is still 120×36 wide and
-// output will wrap/truncate at the wrong column.
+  // Show this session's surface and mark its tab active
+  session.surfaceEl.style.display = "block";
+  session.tabEl.classList.add("active");
+  activeId = id;
 
-function sendResize() {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
-    updateSizeDisplay();
+  // Re-fit after becoming visible — the canvas may not have been sized
+  // correctly while it was hidden
+  session.fitAddon.fit();
+  sendResize(session);
+  session.term.focus();
+
+  // Reflect this tab's connection status in the status bar
+  const wsState = session.ws ? session.ws.readyState : -1;
+  if      (wsState === WebSocket.OPEN)       setStatus("connected",    "connected");
+  else if (wsState === WebSocket.CONNECTING) setStatus("connecting",   "connecting…");
+  else                                        setStatus("disconnected", "disconnected");
+
+  updateSizeDisplay(session);
+}
+
+// ── Destroy a session ──────────────────────────────────────────────────────────
+
+function destroySession(id) {
+  const session = sessions.get(id);
+  if (!session) return;
+
+  // Close the WebSocket — server kills the PTY and shell on close
+  clearTimeout(session.reconnTimer);
+  if (session.ws) session.ws.close(1000, "tab closed");
+
+  // Dispose xterm (frees canvas memory)
+  session.term.dispose();
+
+  // Remove DOM nodes
+  session.tabEl.remove();
+  session.surfaceEl.remove();
+
+  sessions.delete(id);
+
+  // If we just closed the active tab, switch to another one
+  if (activeId === id) {
+    activeId = null;
+    const remaining = [...sessions.keys()];
+    if (remaining.length > 0) {
+      activateSession(remaining[remaining.length - 1]);
+    } else {
+      // No tabs left — open a fresh one automatically
+      const s = createSession();
+      activateSession(s.id);
+    }
   }
+}
+
+// ── Resize ─────────────────────────────────────────────────────────────────────
+
+function sendResize(session) {
+  if (session.ws && session.ws.readyState === WebSocket.OPEN) {
+    session.ws.send(JSON.stringify({
+      type: "resize",
+      cols: session.term.cols,
+      rows: session.term.rows,
+    }));
+  }
+  if (session.id === activeId) updateSizeDisplay(session);
 }
 
 const resizeObserver = new ResizeObserver(() => {
-  fitAddon.fit();
-  sendResize();
+  if (activeId === null) return;
+  const session = sessions.get(activeId);
+  if (!session) return;
+  session.fitAddon.fit();
+  sendResize(session);
 });
-resizeObserver.observe(container);
-
-// Fallback for browsers without ResizeObserver (shouldn't be needed in 2025)
-window.addEventListener("resize", () => {
-  fitAddon.fit();
-  sendResize();
-});
+resizeObserver.observe(termContainer);
 
 // ── Toolbar buttons ────────────────────────────────────────────────────────────
 
-// Clear: send Ctrl+L to the shell (shell clears its own screen)
+btnNewTab.addEventListener("click", () => {
+  const s = createSession();
+  activateSession(s.id);
+});
+
 document.getElementById("btn-clear").addEventListener("click", () => {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: "input", data: "\x0c" })); // \x0c = Ctrl+L
+  if (activeId === null) return;
+  const session = sessions.get(activeId);
+  if (session && session.ws && session.ws.readyState === WebSocket.OPEN) {
+    session.ws.send(JSON.stringify({ type: "input", data: "\x0c" }));
   }
 });
 
-// Reconnect button: close current socket and open a fresh one
 document.getElementById("btn-reconnect").addEventListener("click", () => {
-  if (ws) ws.close();
-  connect();
+  if (activeId === null) return;
+  const session = sessions.get(activeId);
+  if (session) {
+    if (session.ws) session.ws.close();
+    connectSession(session);
+  }
 });
 
-// Traffic-light close: close the WebSocket (shell exits when its PTY closes)
 document.getElementById("btn-close").addEventListener("click", () => {
-  if (ws) ws.close(1000, "user closed");
-  setStatus("disconnected", "closed");
-});
-
-// New tab button: open a fresh page in a new browser tab
-// (each browser tab gets its own WebSocket → its own PTY → its own shell)
-document.getElementById("btn-new-tab").addEventListener("click", () => {
-  window.open(location.href, "_blank");
+  if (activeId !== null) destroySession(activeId);
 });
 
 // ── Exit overlay ───────────────────────────────────────────────────────────────
-//
-// Shown when the shell process exits (user typed `exit`, or the shell crashed).
-// Lets the user reconnect without refreshing the page.
 
-function showExitOverlay(code) {
-  // Remove any existing overlay first
-  document.querySelector(".exit-overlay")?.remove();
+function showExitOverlay(session, code) {
+  session.surfaceEl.querySelectorAll(".exit-overlay").forEach(el => el.remove());
 
   const overlay = document.createElement("div");
   overlay.className = "exit-overlay";
 
-  const p = document.createElement("p");
+  const p   = document.createElement("p");
   p.textContent = `Shell exited with code ${code}.`;
 
   const btn = document.createElement("button");
   btn.textContent = "Restart shell";
   btn.addEventListener("click", () => {
     overlay.remove();
-    term.clear();
-    connect();
+    session.term.clear();
+    connectSession(session);
   });
 
   overlay.appendChild(p);
   overlay.appendChild(btn);
-
-  // Insert relative to the terminal wrapper
-  container.style.position = "relative";
-  container.appendChild(overlay);
+  session.surfaceEl.style.position = "relative";
+  session.surfaceEl.appendChild(overlay);
 }
 
-// ── Kick off ───────────────────────────────────────────────────────────────────
+// ── Boot: open the first session ──────────────────────────────────────────────
 
-connect();
-updateSizeDisplay();
-term.focus();
+const first = createSession();
+activateSession(first.id);

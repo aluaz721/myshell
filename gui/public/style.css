@@ -265,10 +265,15 @@ html, body {
   xterm.js injects its own .xterm container inside .terminal-wrap.
   These rules make it fill the wrapper exactly.
 */
-.terminal-wrap .xterm {
+.terminal-surface {
+  width: 100%;
   height: 100%;
 }
-.terminal-wrap .xterm-viewport {
+
+.terminal-surface .xterm {
+  height: 100%;
+}
+.terminal-surface .xterm-viewport {
   /* let our parent handle scrolling */
   overflow-y: hidden !important;
 }
