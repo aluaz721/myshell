@@ -115,7 +115,15 @@ wss.on("connection", (ws) => {
     cols: 120,
     rows: 36,
     cwd:  os.homedir(),
-    env:  shellEnv,
+    env: {
+        ...process.env,                          // inherit the Node process environment
+        PATH: process.env.PATH ||               // use Node's PATH, or fall back to
+        "/usr/local/bin:/usr/bin:/bin",        // a sane default
+        TERM: "xterm-256color",
+        HOME: os.homedir(),
+        USER: process.env.USER || os.userInfo().username,
+        SHELL: SHELL_PATH,
+    },
   });
 
   console.log(`[pty] spawned pid ${shell.pid} → ${SHELL_PATH}`);
