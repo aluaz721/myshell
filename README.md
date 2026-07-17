@@ -1,4 +1,4 @@
-# minishell
+# DIY UNIX Minishell Implementation
 
 A POSIX-like shell written in C, with a web-based terminal GUI.
 
