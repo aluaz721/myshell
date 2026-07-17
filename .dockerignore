@@ -1,0 +1,11 @@
+.git
+.gitignore
+
+node_modules
+frontend/node_modules
+
+*.o
+*.out
+
+Dockerfile
+docker-compose.yml

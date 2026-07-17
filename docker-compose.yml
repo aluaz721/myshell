@@ -1,0 +1,22 @@
+services:
+  minishell:
+    build:
+      context: .
+      args:
+        - USERNAME=${USER:-defaultuser}
+
+      dockerfile: Dockerfile
+    
+    # Inject the host's hostname into the container prompt
+    hostname: ${HOSTNAME:-localhost}
+    
+    # Mount the current user's actual home directory dynamically
+    volumes:
+      - ${HOME}:/home/${USER:-defaultuser}
+
+    container_name: minishell-frontend
+    ports:
+      - "3000:3000"
+    stdin_open: true
+    tty: true
+    restart: unless-stopped

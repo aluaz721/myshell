@@ -1,7 +1,7 @@
 CC      = gcc
 CFLAGS  = -Wall -Wextra -Werror -std=c99 -pedantic
 TARGET  = minishell
-SRC     = src/minishell.c
+SRC     = minishell.c
 
 .PHONY: all clean debug
 

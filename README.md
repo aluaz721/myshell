@@ -21,10 +21,12 @@ Browser (xterm.js)  ←──WebSocket──→  Node.js server  ←──PTY─
 ## Project layout
 
 ```
-minishell/
+myshell/
 ├── minishell.c        ← the shell (C)
 ├── Makefile
-└── gui/
+├── Dockerfile
+├── docker-compose.yml
+└── frontend/
     ├── package.json
     ├── src/
     │   └── server.js  ← Node.js WebSocket + PTY bridge
@@ -34,7 +36,7 @@ minishell/
         └── terminal.js
 ```
 
-## Quick start
+## Quick start without Docker (Recommended)
 
 ### 1. Build the shell
 
@@ -45,7 +47,7 @@ make          # produces ./minishell
 ### 2. Install GUI dependencies
 
 ```bash
-cd gui
+cd frontend
 npm install
 ```
 
@@ -56,14 +58,20 @@ On macOS Xcode Command Line Tools are enough.
 ### 3. Run
 
 ```bash
-# from the gui/ directory
-# Use the absolute path to minishell (or it won't spawn correctly in the PTY)
-# Note: Use WSL Node.js directly to avoid Windows npm issues
+# from the frontend/ directory
 SHELL_BIN={pwd}../minishell /usr/bin/node src/server.js
 ```
 
-Open **http://localhost:3000** in your browser. You should see a terminal
-running your minishell.
+Open **http://localhost:3000** in your browser.
+
+
+## Build and Run with Docker
+```bash
+docker compose up --build
+```
+
+Open **http://localhost:3000** in your browser.
+
 
 ## How the integration works
 
