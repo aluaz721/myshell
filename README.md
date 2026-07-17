@@ -107,26 +107,6 @@ xterm.js
 Canvas renders ANSI output
 ```
 
-### What is a PTY?
-
-A pseudoterminal (PTY) is a kernel-level abstraction that makes a process
-believe it is talking to a real terminal, even though it is not. It has two
-sides:
-
-- **Master** — held by `node-pty`. Reads output, writes input.
-- **Slave** — given to `minishell` as its stdin/stdout/stderr. The shell sees
-  it as a normal terminal device (it can check `isatty()`).
-
-The kernel's *line discipline* sits between them. It handles:
-- Echoing characters back to the screen
-- Translating `\r` to `\r\n` (carriage-return newline)
-- Sending `SIGINT` when Ctrl-C is pressed
-- Sending `SIGTSTP` when Ctrl-Z is pressed
-- `SIGWINCH` when the window is resized
-
-This is why minishell needs no changes at all — it just reads from stdin and
-writes to stdout, exactly as it would in a real terminal.
-
 ### Resize flow
 
 When the browser window changes size:
@@ -143,11 +123,3 @@ When the browser window changes size:
 Each browser tab that opens `ws://localhost:3000/terminal` gets its own
 WebSocket connection → its own `pty.spawn()` call → its own independent
 shell process. No shared state.
-
-## Building for production
-
-```bash
-# Serve over HTTPS (required for wss://)
-# Set PORT and SHELL_BIN, put behind nginx/caddy for TLS.
-PORT=8080 SHELL_BIN=/usr/local/bin/minishell node src/server.js
-```
