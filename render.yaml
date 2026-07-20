@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: minishell
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free
+    healthCheckPath: /
+    envVars:
+      - key: PORT
+        value: 3000
