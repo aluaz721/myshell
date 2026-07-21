@@ -1,6 +1,8 @@
-# UNIX Shell & Broswer-Based Terminal
+# [UNIX Shell & Broswer-Based Terminal](https://minishell-6xs8.onrender.com)
 
 A POSIX-like shell written in C, with a web-based terminal GUI.
+
+Live URL: https://minishell-6xs8.onrender.com
 
 ```
 Browser (xterm.js)  ←──WebSocket──→  Node.js server  ←──PTY──→  minishell (C)
