@@ -38,7 +38,15 @@ myshell/
         └── terminal.js
 ```
 
-## Quick start without Docker (Recommended)
+## Build and Run with Docker
+```bash
+docker compose up --build
+```
+
+Open **http://localhost:3000** in your browser.
+
+
+## Quick start without Docker 
 
 ### 1. Build the shell
 
@@ -62,14 +70,6 @@ On macOS Xcode Command Line Tools are enough.
 ```bash
 # from the frontend/ directory
 SHELL_BIN={pwd}../minishell /usr/bin/node src/server.js
-```
-
-Open **http://localhost:3000** in your browser.
-
-
-## Build and Run with Docker
-```bash
-docker compose up --build
 ```
 
 Open **http://localhost:3000** in your browser.
